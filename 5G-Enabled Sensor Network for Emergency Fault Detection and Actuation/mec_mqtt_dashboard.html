@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MEC MQTT Control Panel</title>
+  <script src="https://cdn.jsdelivr.net/npm/mqtt/dist/mqtt.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:#151c26;--surface:#1d2535;--surface2:#232d40;--border:rgba(255,255,255,0.09);
+      --accent:#38bdf8;--accent2:#a78bfa;--green:#34d399;--red:#f87171;
+      --orange:#fb923c;--yellow:#fbbf24;--text:#e2e8f0;--text-muted:#64748b;
+      --mono:'Space Mono',monospace;--sans:'Syne',sans-serif;
+    }
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:100vh}
+    .glow-tr{position:fixed;top:-200px;right:-120px;width:550px;height:550px;background:radial-gradient(ellipse,rgba(56,189,248,.06) 0%,transparent 65%);pointer-events:none;z-index:0}
+    .glow-bl{position:fixed;bottom:-180px;left:-100px;width:500px;height:500px;background:radial-gradient(ellipse,rgba(167,139,250,.06) 0%,transparent 65%);pointer-events:none;z-index:0}
+    .container{max-width:1100px;margin:auto;padding:28px 22px 48px;position:relative;z-index:1}
+    header{display:flex;align-items:center;justify-content:space-between;margin-bottom:28px;padding-bottom:20px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:14px}
+    .header-left{display:flex;flex-direction:column;gap:4px}
+    .eyebrow{font-family:var(--mono);font-size:10px;letter-spacing:.2em;color:var(--accent);text-transform:uppercase}
+    h1{font-size:22px;font-weight:800;letter-spacing:-.3px;line-height:1.1}
+    h1 em{font-style:normal;color:var(--accent)}
+    .header-right{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+    .mode-wrap{position:relative}
+    .mode-select{appearance:none;background:var(--surface2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.1em;padding:8px 36px 8px 14px;cursor:pointer;outline:none}
+    .mode-arrow{position:absolute;right:11px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:10px;pointer-events:none}
+    .mode-label{font-family:var(--mono);font-size:10px;color:var(--text-muted);letter-spacing:.1em;text-transform:uppercase}
+    #brokerStatus{font-family:var(--mono);font-size:11px;font-weight:700;padding:6px 13px;border-radius:999px;letter-spacing:.08em;transition:all .3s}
+    #brokerStatus.online{background:rgba(52,211,153,.12);color:var(--green);border:1px solid rgba(52,211,153,.3)}
+    #brokerStatus.offline{background:rgba(248,113,113,.1);color:var(--red);border:1px solid rgba(248,113,113,.25)}
+    .section-label{font-family:var(--mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--text-muted);margin-bottom:12px;display:flex;align-items:center;gap:10px}
+    .section-label::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,var(--border),transparent)}
+    .grid{display:grid;grid-template-columns:repeat(12,1fr);gap:14px}
+    .mb{margin-bottom:14px}
+    .card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px 20px;position:relative;overflow:hidden;transition:border-color .25s;animation:fadeUp .45s ease both}
+    .card::before{content:'';position:absolute;inset:0;background:linear-gradient(145deg,rgba(255,255,255,.025) 0%,transparent 55%);border-radius:14px;pointer-events:none}
+    .a-cyan::after{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--accent),transparent);border-radius:14px 14px 0 0}
+    .a-orange::after{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--orange),transparent);border-radius:14px 14px 0 0}
+    .a-green::after{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--green),transparent);border-radius:14px 14px 0 0}
+    .a-red::after{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--red),transparent);border-radius:14px 14px 0 0}
+    .a-purple::after{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--accent2),transparent);border-radius:14px 14px 0 0}
+    .a-yellow::after{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--yellow),transparent);border-radius:14px 14px 0 0}
+    .clabel{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--text-muted);margin-bottom:10px}
+    .clabel-sub{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:rgba(100,116,139,.6);margin-bottom:10px;margin-top:-6px}
+    .mval{font-family:var(--mono);font-size:36px;font-weight:700;line-height:1;letter-spacing:-1.5px}
+    .munit{font-family:var(--mono);font-size:14px;color:var(--text-muted);margin-left:3px}
+    .mini{font-family:var(--mono);font-size:10px;color:var(--text-muted);margin-top:8px}
+    .pill{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11px;font-weight:700;padding:5px 12px;border-radius:999px;letter-spacing:.06em;transition:all .4s}
+    .pill::before{content:'';width:6px;height:6px;border-radius:50%;flex-shrink:0}
+    .pill.online{background:rgba(52,211,153,.1);color:var(--green);border:1px solid rgba(52,211,153,.25)}
+    .pill.online::before{background:var(--green);animation:pdot 2s infinite}
+    .pill.offline{background:rgba(248,113,113,.09);color:var(--red);border:1px solid rgba(248,113,113,.2)}
+    .pill.offline::before{background:var(--red)}
+    @keyframes pdot{0%,100%{opacity:1}50%{opacity:.35}}
+    canvas.sparkline{display:block;width:100%;height:70px;margin-top:12px;border-radius:6px}
+    .flame-box{font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:.04em;padding:11px 13px;border-radius:8px;margin-top:8px;transition:all .4s}
+    .flame-safe{background:rgba(52,211,153,.08);color:var(--green);border:1px solid rgba(52,211,153,.2)}
+    .flame-danger{background:rgba(248,113,113,.12);color:var(--red);border:1px solid rgba(248,113,113,.3);animation:alarm 1s infinite}
+    @keyframes alarm{0%,100%{background:rgba(248,113,113,.12)}50%{background:rgba(248,113,113,.22)}}
+    .latch-banner{display:none;background:rgba(248,113,113,.14);border:2px solid rgba(248,113,113,.5);border-radius:12px;padding:16px 20px;margin-bottom:14px;animation:alarm .7s infinite}
+    .latch-banner.visible{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+    .latch-title{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--red);letter-spacing:.06em}
+    .latch-sub{font-family:var(--mono);font-size:10px;color:rgba(248,113,113,.7);margin-top:3px}
+    .btn-reset{border:2px solid var(--red);background:rgba(248,113,113,.15);color:var(--red);border-radius:10px;padding:10px 20px;font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.08em;cursor:pointer;transition:all .2s;white-space:nowrap}
+    .btn-reset:hover{background:rgba(248,113,113,.28)}
+    .dial-wrap{display:flex;flex-direction:column;align-items:center;gap:10px;padding-top:4px}
+    canvas#fanDial{cursor:grab;display:block;touch-action:none}
+    canvas#fanDial:active{cursor:grabbing}
+    .dial-readout{display:flex;align-items:baseline;gap:6px}
+    .dial-val{font-family:var(--mono);font-size:42px;font-weight:700;letter-spacing:-2px;line-height:1}
+    .dial-pct{font-family:var(--mono);font-size:13px;color:var(--text-muted)}
+    .dial-badge{display:inline-block;font-family:var(--mono);font-size:11px;font-weight:700;padding:4px 12px;border-radius:6px;letter-spacing:.06em;transition:all .3s}
+    .dial-btns{display:flex;gap:10px;width:100%;max-width:260px}
+    .btn-send{flex:1;border:1px solid rgba(56,189,248,.3);background:rgba(56,189,248,.09);color:var(--accent);border-radius:10px;padding:11px;font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.08em;cursor:pointer;transition:all .2s}
+    .btn-send:hover{background:rgba(56,189,248,.16)}
+    .btn-send:active{transform:scale(.98)}
+    .btn-base{flex:1;border:1px solid rgba(251,191,36,.3);background:rgba(251,191,36,.08);color:var(--yellow);border-radius:10px;padding:11px;font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.08em;cursor:pointer;transition:all .2s}
+    .btn-base:hover{background:rgba(251,191,36,.16)}
+    .btn-row{display:flex;gap:10px;margin-top:12px}
+    .ctrl-btn{flex:1;border:none;border-radius:10px;padding:13px 8px;font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.08em;cursor:pointer;transition:all .2s}
+    .btn-on{background:rgba(52,211,153,.11);color:var(--green);border:1px solid rgba(52,211,153,.28)}
+    .btn-on:hover{background:rgba(52,211,153,.19)}
+    .btn-off{background:rgba(248,113,113,.1);color:var(--red);border:1px solid rgba(248,113,113,.24)}
+    .btn-off:hover{background:rgba(248,113,113,.18)}
+    .lat-value{font-family:var(--mono);font-size:34px;font-weight:700;letter-spacing:-1px;margin-top:2px}
+    .lat-track{height:5px;background:rgba(255,255,255,.07);border-radius:999px;margin-top:12px;overflow:hidden}
+    .lat-bar{height:100%;width:0%;border-radius:999px;background:var(--green);transition:width .6s ease,background .5s}
+    .tbadge{display:inline-block;font-family:var(--mono);font-size:9px;color:var(--text-muted);background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:5px;padding:2px 7px;margin-top:10px}
+    .log-wrap{margin-top:22px}
+    .log-hdr{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+    .log-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);animation:pdot 2s infinite}
+    .log-title{font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--text-muted)}
+    .log{background:rgba(10,14,20,.6);border:1px solid var(--border);border-radius:12px;padding:14px 16px;height:150px;overflow-y:auto;font-family:var(--mono);font-size:11px;color:rgba(56,189,248,.7);white-space:pre-wrap;line-height:1.9}
+    .log::-webkit-scrollbar{width:3px}
+    .log::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1);border-radius:3px}
+    .s12{grid-column:span 12}.s6{grid-column:span 6}.s4{grid-column:span 4}.s3{grid-column:span 3}.s8{grid-column:span 8}
+    .mode-section{transition:opacity .25s ease}
+    .mode-section.hidden{display:none}
+    @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+    .card:nth-child(1){animation-delay:.04s}.card:nth-child(2){animation-delay:.08s}.card:nth-child(3){animation-delay:.12s}
+    .card:nth-child(4){animation-delay:.16s}.card:nth-child(5){animation-delay:.20s}.card:nth-child(6){animation-delay:.24s}
+
+    /* ── Temperature bar ── */
+    .temp-bar-wrap{margin-top:12px}
+    .temp-bar-track{height:6px;background:rgba(255,255,255,.07);border-radius:999px;overflow:hidden;position:relative}
+    .temp-bar-fill{height:100%;width:0%;border-radius:999px;transition:width .6s ease,background .5s}
+    .temp-zone-labels{display:flex;justify-content:space-between;font-family:var(--mono);font-size:9px;color:var(--text-muted);margin-top:5px}
+
+    /* ── Fan preset buttons ── */
+    .fan-presets{display:flex;gap:8px;width:100%;max-width:260px;margin-top:4px}
+    .fan-preset-btn{flex:1;font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.06em;padding:6px 4px;border-radius:8px;cursor:pointer;transition:all .15s;text-align:center}
+    .fan-preset-btn:active{transform:scale(.95)}
+    .fpb-low  {border:1px solid rgba(56,189,248,.3); background:rgba(56,189,248,.08);  color:var(--accent)}
+    .fpb-low:hover  {background:rgba(56,189,248,.18)}
+    .fpb-mid  {border:1px solid rgba(251,191,36,.3);  background:rgba(251,191,36,.08); color:var(--yellow)}
+    .fpb-mid:hover  {background:rgba(251,191,36,.18)}
+    .fpb-high {border:1px solid rgba(248,113,113,.3); background:rgba(248,113,113,.08);color:var(--red)}
+    .fpb-high:hover {background:rgba(248,113,113,.18)}
+
+    .relay-state-badge{display:inline-block;font-family:var(--mono);font-size:10px;font-weight:700;padding:3px 10px;border-radius:5px;letter-spacing:.06em;transition:all .3s;margin-top:10px}
+    .relay-state-badge.on{background:rgba(52,211,153,.1);color:var(--green);border:1px solid rgba(52,211,153,.25)}
+    .relay-state-badge.off{background:rgba(248,113,113,.09);color:var(--red);border:1px solid rgba(248,113,113,.2)}
+
+    @media(max-width:720px){.s4,.s3,.s6,.s8{grid-column:span 12}header{flex-direction:column;align-items:flex-start}}
+  </style>
+</head>
+<body>
+<div class="glow-tr"></div><div class="glow-bl"></div>
+<div class="container">
+
+  <header>
+    <div class="header-left">
+      <div class="eyebrow">IoT Control System · v3</div>
+      <h1>MEC <em>MQTT</em> Dashboard</h1>
+    </div>
+    <div class="header-right">
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <span class="mode-label">View Mode</span>
+        <div class="mode-wrap">
+          <select class="mode-select" id="modeSelect" onchange="switchMode(this.value)">
+            <option value="observe">📡  OBSERVE</option>
+            <option value="control">🎛  CONTROL</option>
+          </select>
+          <span class="mode-arrow">▾</span>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px">
+        <div id="brokerStatus" class="offline">● Disconnected</div>
+        <span style="font-family:var(--mono);font-size:10px;color:var(--text-muted)">192.168.116.30 : 9001 / WS</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ══════════════ OBSERVE ══════════════ -->
+  <div id="observeMode" class="mode-section">
+    <div class="section-label">Node Status</div>
+    <div class="grid mb">
+      <div class="card s4">
+        <div class="clabel">Sensor Node</div>
+        <div id="sensorStatus" class="pill offline">Sensor Offline</div>
+        <div class="tbadge">home/sensors</div>
+      </div>
+      <div class="card s4">
+        <div class="clabel">Actuator Node</div>
+        <div id="actuatorStatus" class="pill offline">Actuator Offline</div>
+        <div class="tbadge">home/actuator/status</div>
+      </div>
+      <div class="card s4 a-cyan">
+        <div class="clabel">Fan PWM</div>
+        <div class="mval"><span id="obs-fanpwm">--</span><span class="munit">/ 255</span></div>
+        <div class="mini">reported by sensor node</div>
+      </div>
+    </div>
+
+    <div class="section-label">Sensor Readings</div>
+    <div class="grid mb">
+      <div class="card s4 a-orange">
+        <div class="clabel">Flame Detector</div>
+        <div class="flame-box flame-safe" id="flame">-- / --</div>
+        <div class="tbadge">home/sensors → flame (0 = fire)</div>
+      </div>
+      <div class="card s4 a-yellow">
+        <div class="clabel">Temperature</div>
+        <div class="mval"><span id="obs-temp" style="color:var(--yellow)">--</span><span class="munit">°C</span></div>
+        <div class="temp-bar-wrap">
+          <div class="temp-bar-track"><div class="temp-bar-fill" id="obs-tempBar"></div></div>
+          <div class="temp-zone-labels"><span>0°</span><span>20°</span><span>30°</span><span>40°</span></div>
+        </div>
+        <div id="obs-tempBadge" class="tbadge" style="margin-top:10px">home/sensors → temp_c</div>
+      </div>
+      <div class="card s4 a-green">
+        <div class="clabel">Voltage (calibrated)</div>
+        <div class="mval"><span id="voltage">--</span><span class="munit">V</span></div>
+        <canvas id="voltageGraph" class="sparkline" width="400" height="100"></canvas>
+        <div class="mini">0.0157·Vpin² + 5.1177·Vpin + 0.6332</div>
+      </div>
+    </div>
+
+    <div class="section-label">Network</div>
+    <div class="grid mb">
+      <div class="card s6 a-cyan">
+        <div class="clabel">Round-Trip Latency</div>
+        <div class="lat-value"><span id="latVal">--</span><span class="munit">ms</span></div>
+        <div class="lat-track"><div class="lat-bar" id="latBar"></div></div>
+        <div style="display:flex;justify-content:space-between;margin-top:8px">
+          <span class="mini">Avg: <span id="latAvg">--</span></span>
+          <span class="mini">Min: <span id="latMin">--</span> · Max: <span id="latMax">--</span></span>
+        </div>
+      </div>
+      <div class="card s6" style="display:flex;flex-direction:column;justify-content:center;align-items:center;gap:12px">
+        <div style="font-family:var(--mono);font-size:11px;color:var(--text-muted);letter-spacing:.12em;text-transform:uppercase">Switch to Control Mode</div>
+        <button onclick="document.getElementById('modeSelect').value='control';switchMode('control')"
+          style="border:1px solid rgba(56,189,248,.3);background:rgba(56,189,248,.09);color:var(--accent);border-radius:10px;padding:10px 22px;font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.1em;cursor:pointer">
+          🎛 OPEN CONTROL PANEL →
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════ CONTROL ══════════════ -->
+  <div id="controlMode" class="mode-section hidden">
+
+    <div class="latch-banner" id="latchBanner">
+      <div>
+        <div class="latch-title">⚠ FLAME LATCH ACTIVE — ALL RELAYS ENERGISED</div>
+        <div class="latch-sub">Fire was detected. Relays are locked ON. Only a manual reset can release them.</div>
+      </div>
+      <button class="btn-reset" onclick="sendFlameReset()">RESET LATCH</button>
+    </div>
+
+    <div class="section-label">Live Readings</div>
+    <div class="grid mb">
+      <div class="card s4 a-orange">
+        <div class="clabel">Flame Detector</div>
+        <div class="flame-box flame-safe" id="ctrl-flame">-- / --</div>
+        <div class="tbadge">home/sensors → flame</div>
+      </div>
+      <div class="card s4 a-yellow">
+        <div class="clabel">Temperature</div>
+        <div class="mval"><span id="ctrl-temp" style="color:var(--yellow)">--</span><span class="munit">°C</span></div>
+        <div class="temp-bar-wrap">
+          <div class="temp-bar-track"><div class="temp-bar-fill" id="ctrl-tempBar"></div></div>
+          <div class="temp-zone-labels"><span>0°</span><span>20°</span><span>30°</span><span>40°</span></div>
+        </div>
+        <div id="ctrl-tempZone" class="relay-state-badge off" style="background:rgba(255,255,255,.04);color:var(--text-muted);border-color:var(--border)">-- ZONE</div>
+        <div class="tbadge">home/sensors → temp_c</div>
+      </div>
+      <div class="card s4 a-green">
+        <div class="clabel">Voltage (calibrated)</div>
+        <div class="mval"><span id="ctrl-voltage">--</span><span class="munit">V</span></div>
+        <canvas id="voltageCtrlGraph" class="sparkline" width="400" height="100"></canvas>
+      </div>
+    </div>
+
+    <!-- ── ACTUATOR CONTROLS ── -->
+    <div class="section-label">Actuator Controls</div>
+    <div class="grid mb">
+
+      <!-- Relay 1 & 2 — Motor Power -->
+      <div class="card s4">
+        <div class="clabel">Relay 1 &amp; 2 — Motor Power</div>
+        <div class="clabel-sub">Actuator node</div>
+        <div class="btn-row">
+          <button class="ctrl-btn btn-on"  onclick="sendRelay('ON')">▶ ON</button>
+          <button class="ctrl-btn btn-off" onclick="sendRelay('OFF')">■ OFF</button>
+        </div>
+        <div id="relay12Badge" class="relay-state-badge off">● UNKNOWN</div>
+        <div class="mini" style="margin-top:10px">Blocked while flame latch is active</div>
+        <div class="tbadge">home/commands → relay1</div>
+      </div>
+
+      <!-- Relay 3 & 4 — Voltage Supply -->
+      <div class="card s4 a-purple">
+        <div class="clabel">Relay 3 &amp; 4 — Voltage Supply</div>
+        <div class="clabel-sub">Actuator node</div>
+        <div class="btn-row">
+          <button class="ctrl-btn btn-on"  onclick="sendVoltageRelay('ON')">▶ ON</button>
+          <button class="ctrl-btn btn-off" onclick="sendVoltageRelay('OFF')">■ OFF</button>
+        </div>
+        <div id="relay34Badge" class="relay-state-badge off">● OFF</div>
+        <div class="mini" style="margin-top:10px">Cuts voltage supply to circuit</div>
+        <div class="tbadge">home/commands → relay2</div>
+      </div>
+
+      <!-- Fan / Motor Speed Dial -->
+      <div class="card s4 a-red">
+        <div class="clabel">Fan / Motor Speed</div>
+        <div class="clabel-sub">Sensor node — PWM · 3 auto zones + manual</div>
+        <div class="dial-wrap">
+          <div class="dial-readout">
+            <div class="dial-val" id="dialVal">80</div>
+            <div class="dial-pct">/ 255 &nbsp;·&nbsp; <span id="dialPct">31</span>%</div>
+          </div>
+          <canvas id="fanDial" width="180" height="180"></canvas>
+          <div id="dialBadge" class="dial-badge" style="background:rgba(56,189,248,.1);color:var(--accent);border:1px solid rgba(56,189,248,.25)">● BASE SPEED</div>
+
+          <!-- 3 Fan Level Presets -->
+          <div class="fan-presets">
+            <button class="fan-preset-btn fpb-low"  onclick="applyFanPreset(80,  'LOW')">▶ LOW<br><span style="font-size:9px;opacity:.7">&lt;20°C · 80</span></button>
+            <button class="fan-preset-btn fpb-mid"  onclick="applyFanPreset(150, 'MED')">▶▶ MED<br><span style="font-size:9px;opacity:.7">20-40° · 150</span></button>
+            <button class="fan-preset-btn fpb-high" onclick="applyFanPreset(255, 'HIGH')">▶▶▶ HIGH<br><span style="font-size:9px;opacity:.7">&gt;40°C · 255</span></button>
+          </div>
+
+          <div class="dial-btns">
+            <button class="btn-send" onclick="sendFanPwm()">▶ SEND</button>
+            <button class="btn-base" onclick="resetFanBase()">⟳ BASE</button>
+          </div>
+          <div class="mini" style="text-align:center">Drag · scroll · preset · or touch</div>
+        </div>
+        <div class="tbadge">home/commands → fan_pwm</div>
+      </div>
+
+    </div>
+
+    <!-- ── NETWORK ── -->
+    <div class="grid mb">
+      <div class="card s12 a-cyan">
+        <div class="clabel">Network — Round-Trip Latency</div>
+        <div style="display:flex;align-items:baseline;gap:20px;flex-wrap:wrap">
+          <div class="lat-value"><span id="ctrl-lat">--</span><span class="munit">ms</span></div>
+          <span class="mini">Avg: <span id="ctrl-latAvg">--</span> &nbsp;·&nbsp; Min: <span id="ctrl-latMin">--</span> &nbsp;·&nbsp; Max: <span id="ctrl-latMax">--</span></span>
+        </div>
+        <div class="lat-track" style="margin-top:14px"><div class="lat-bar" id="ctrl-latBar"></div></div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="log-wrap">
+    <div class="log-hdr"><div class="log-dot"></div><span class="log-title">Event Log</span></div>
+    <div class="log" id="log"></div>
+  </div>
+</div>
+
+<script>
+const BROKER_HOST    = "192.168.116.30";
+const BROKER_PORT    = 9001;
+const TOPIC_SENSORS    = "home/sensors";
+const TOPIC_COMMANDS   = "home/commands";
+const TOPIC_ACT_STATUS = "home/actuator/status";
+const TOPIC_PING       = "home/ping";
+const MAX_PTS = 60;
+
+// Temperature thresholds matching actuator firmware (3 zones, top = 40 °C)
+const TEMP_LOW_MAX  = 20;   // < 20 °C  → LOW  (PWM 80)
+const TEMP_MID_MAX  = 40;   // 20-40 °C → MED  (PWM 150)
+                             // ≥ 40 °C  → HIGH (PWM 255)
+
+const voltageBuf = [], voltageCtrlBuf = [];
+let latBuf = [], latMin = Infinity, latMax = -Infinity;
+let lastSensorTs = 0, flameLatchActive = false;
+
+const logEl = document.getElementById("log");
+function log(msg){ const t=new Date().toLocaleTimeString(); logEl.textContent+=`[${t}]  ${msg}\n`; logEl.scrollTop=logEl.scrollHeight; }
+
+function switchMode(mode){
+  document.getElementById("observeMode").classList.toggle("hidden", mode!=="observe");
+  document.getElementById("controlMode").classList.toggle("hidden", mode!=="control");
+}
+
+function setPill(el, online, text){ if(!el)return; el.className="pill "+(online?"online":"offline"); el.textContent=text; }
+function setFlameLatch(active){ flameLatchActive=active; document.getElementById("latchBanner").classList.toggle("visible",active); }
+
+const brokerEl   = document.getElementById("brokerStatus");
+const sensorPill = document.getElementById("sensorStatus");
+const actPill    = document.getElementById("actuatorStatus");
+
+const client = mqtt.connect({
+  hostname:BROKER_HOST, port:BROKER_PORT, protocol:"ws", path:"/", clean:true,
+  connectTimeout:4000, reconnectPeriod:2000,
+  clientId:"web_"+Math.random().toString(16).slice(2,10), keepalive:60
+});
+
+client.on("connect",()=>{
+  brokerEl.className="online"; brokerEl.textContent="● Connected"; log("Connected to Local Broker");
+  [TOPIC_SENSORS,TOPIC_ACT_STATUS,TOPIC_PING].forEach(t=>client.subscribe(t,{qos:1},e=>{if(!e)log("Sub ← "+t);}));
+  setInterval(()=>client.publish(TOPIC_PING,JSON.stringify({ts:Date.now()}),{qos:0}),3000);
+});
+client.on("reconnect",()=>{brokerEl.className="offline"; brokerEl.textContent="↻ Reconnecting…";});
+client.on("close",()=>{brokerEl.className="offline"; brokerEl.textContent="● Disconnected";});
+client.on("error",e=>{brokerEl.className="offline"; brokerEl.textContent="✕ Error"; log("Error: "+e.message);});
+
+client.on("message",(topic,message)=>{
+  const text = message.toString(); log(`↓ ${topic}  ${text}`);
+  let d; try{d=JSON.parse(text);}catch(e){return;}
+
+  if(topic === TOPIC_SENSORS){
+    lastSensorTs = Date.now(); setPill(sensorPill, true, "Sensor Online");
+
+    const voltage = d.voltage ?? null;
+    const fanpwm  = d.fan_pwm  ?? null;
+    const tempC   = d.temperature   ?? null;
+
+    // Voltage
+    setText("voltage",     voltage!=null ? parseFloat(voltage).toFixed(2) : "--");
+    setText("ctrl-voltage",voltage!=null ? parseFloat(voltage).toFixed(2) : "--");
+    setText("obs-fanpwm",  fanpwm!=null  ? fanpwm : "--");
+
+    if(voltage !== null){
+      const v = parseFloat(voltage);
+      voltageBuf.push(v);     if(voltageBuf.length>MAX_PTS)    voltageBuf.shift();
+      voltageCtrlBuf.push(v); if(voltageCtrlBuf.length>MAX_PTS)voltageCtrlBuf.shift();
+      drawGraph("voltageGraph",    voltageBuf,     "#059669","#34d399");
+      drawGraph("voltageCtrlGraph",voltageCtrlBuf, "#059669","#34d399");
+    }
+
+    // Temperature
+    if(tempC !== null){ updateTempDisplay(parseFloat(tempC)); }
+
+    // Flame
+    if(d.flame !== undefined){ const isFire=(d.flame===1); setFlame("flame",isFire); setFlame("ctrl-flame",isFire); }
+    return;
+  }
+
+  if(topic === TOPIC_ACT_STATUS){
+    const on = d.availability === "ONLINE";
+    setPill(actPill, on, on ? "Actuator Online" : "Actuator Offline");
+    if(d.flame_latch !== undefined) setFlameLatch(!!d.flame_latch);
+    if(d.relay1 !== undefined) updateRelayBadge("relay12Badge", d.relay1==="ON");
+    if(d.relay3 !== undefined) updateRelayBadge("relay34Badge", d.relay3==="ON");
+    return;
+  }
+
+  if(topic === TOPIC_PING && d.ts){ updateLatency(Date.now()-d.ts); return; }
+});
+
+setInterval(()=>{ if(lastSensorTs && Date.now()-lastSensorTs>6000) setPill(sensorPill,false,"Sensor Offline"); },3000);
+
+/* ── TEMPERATURE DISPLAY ── */
+function updateTempDisplay(t){
+  // Observe mode
+  const obsEl = document.getElementById("obs-temp");
+  if(obsEl){
+    obsEl.textContent = t.toFixed(1);
+    obsEl.style.color = tempColor(t);
+  }
+  updateTempBar("obs-tempBar", t);
+
+  // Control mode
+  const ctrlEl = document.getElementById("ctrl-temp");
+  if(ctrlEl){
+    ctrlEl.textContent = t.toFixed(1);
+    ctrlEl.style.color = tempColor(t);
+  }
+  updateTempBar("ctrl-tempBar", t);
+
+  // Zone badge in control mode
+  const zoneEl = document.getElementById("ctrl-tempZone");
+  if(zoneEl){
+    if(t < TEMP_LOW_MAX){
+      zoneEl.textContent="● LOW ZONE (<20°C)";
+      zoneEl.style.cssText="display:inline-block;font-family:var(--mono);font-size:10px;font-weight:700;padding:3px 10px;border-radius:5px;letter-spacing:.06em;transition:all .3s;margin-top:10px;background:rgba(56,189,248,.1);color:var(--accent);border:1px solid rgba(56,189,248,.25)";
+    } else if(t < TEMP_MID_MAX){
+      zoneEl.textContent="●● MED ZONE (20-40°C)";
+      zoneEl.style.cssText="display:inline-block;font-family:var(--mono);font-size:10px;font-weight:700;padding:3px 10px;border-radius:5px;letter-spacing:.06em;transition:all .3s;margin-top:10px;background:rgba(251,191,36,.1);color:var(--yellow);border:1px solid rgba(251,191,36,.25)";
+    } else {
+      zoneEl.textContent="●●● HIGH ZONE (≥40°C)";
+      zoneEl.style.cssText="display:inline-block;font-family:var(--mono);font-size:10px;font-weight:700;padding:3px 10px;border-radius:5px;letter-spacing:.06em;transition:all .3s;margin-top:10px;background:rgba(248,113,113,.12);color:var(--red);border:1px solid rgba(248,113,113,.3)";
+    }
+  }
+}
+
+function tempColor(t){
+  if(t < TEMP_LOW_MAX) return "var(--accent)";
+  if(t < TEMP_MID_MAX) return "var(--yellow)";
+  return "var(--red)";
+}
+
+function updateTempBar(id, t){
+  const el = document.getElementById(id); if(!el) return;
+  const pct = Math.min(100, (t / 40) * 100);
+  el.style.width = pct + "%";
+  el.style.background = tempColor(t);
+}
+
+/* ── RELAY COMMANDS ── */
+function sendRelay(state){
+  if(flameLatchActive){log("⚠ Relay command blocked – flame latch active");return;}
+  const p=JSON.stringify({relay1:state}); client.publish(TOPIC_COMMANDS,p,{qos:1,retain:false}); log("↑ "+TOPIC_COMMANDS+"  "+p);
+  updateRelayBadge("relay12Badge", state==="ON");
+}
+
+function sendVoltageRelay(state){
+  if(flameLatchActive){log("⚠ Voltage relay command blocked – flame latch active");return;}
+  const p=JSON.stringify({relay2:state}); client.publish(TOPIC_COMMANDS,p,{qos:1,retain:false}); log("↑ "+TOPIC_COMMANDS+"  "+p);
+  updateRelayBadge("relay34Badge", state==="ON");
+}
+
+function updateRelayBadge(id, isOn){
+  const el=document.getElementById(id); if(!el)return;
+  el.className="relay-state-badge "+(isOn?"on":"off");
+  el.textContent=isOn?"● ON":"● OFF";
+}
+
+/* ── FAN PWM ── */
+function sendFanPwm(){ const p=JSON.stringify({fan_pwm:dialPwm}); client.publish(TOPIC_COMMANDS,p,{qos:1,retain:false}); log("↑ "+TOPIC_COMMANDS+"  "+p); }
+function resetFanBase(){ setDialPwm(80); sendFanPwm(); }
+
+/* ── FAN PRESETS ── */
+function applyFanPreset(pwm, label){
+  setDialPwm(pwm);
+  log(`[PRESET] ${label} → PWM ${pwm}`);
+  sendFanPwm();
+}
+
+/* ── FLAME RESET ── */
+function sendFlameReset(){ const p=JSON.stringify({flame_reset:true}); client.publish(TOPIC_COMMANDS,p,{qos:1,retain:false}); log("↑ flame_reset sent"); setFlameLatch(false); }
+
+/* ═══ ROTARY DIAL ═══ */
+const DC=document.getElementById("fanDial"), DCX=DC.getContext("2d");
+const DW=180, CX=DW/2, CY=DW/2, R_OUT=74, R_IN=46;
+const ANG_START=(135*Math.PI)/180, ANG_SWEEP=(270*Math.PI)/180;
+let dialPwm=80, isDragging=false;
+
+function ang2pwm(a){ let d=a-ANG_START; while(d<0)d+=2*Math.PI; while(d>2*Math.PI)d-=2*Math.PI; if(d>ANG_SWEEP)d=(d-ANG_SWEEP<Math.PI)?ANG_SWEEP:0; return Math.round((d/ANG_SWEEP)*255); }
+function pwm2ang(p){ return ANG_START+(p/255)*ANG_SWEEP; }
+
+function drawDial(){
+  DCX.clearRect(0,0,DW,DW);
+  const ca=pwm2ang(dialPwm);
+  DCX.beginPath(); DCX.arc(CX,CY,R_OUT-5,ANG_START,ANG_START+ANG_SWEEP,false);
+  DCX.strokeStyle="rgba(255,255,255,0.07)"; DCX.lineWidth=11; DCX.lineCap="round"; DCX.stroke();
+  if(dialPwm>0){
+    const col=dialPwm<=80?"#38bdf8":dialPwm<150?"#fbbf24":"#f87171";
+    DCX.beginPath(); DCX.arc(CX,CY,R_OUT-5,ANG_START,ca,false);
+    DCX.strokeStyle=col; DCX.lineWidth=11; DCX.lineCap="round"; DCX.stroke();
+  }
+  DCX.beginPath(); DCX.arc(CX,CY,R_OUT,0,2*Math.PI); DCX.strokeStyle="rgba(255,255,255,0.06)"; DCX.lineWidth=1; DCX.stroke();
+  DCX.beginPath(); DCX.arc(CX,CY,R_IN,0,2*Math.PI); DCX.fillStyle="#1d2535"; DCX.fill(); DCX.strokeStyle="rgba(255,255,255,0.1)"; DCX.lineWidth=1; DCX.stroke();
+
+  // Draw 3-zone tick marks at 80/255 and 150/255
+  const ticks = [0,80,150,255];
+  for(let i=0;i<=8;i++){
+    const a=ANG_START+(i/8)*ANG_SWEEP;
+    DCX.beginPath(); DCX.moveTo(CX+(R_OUT+2)*Math.cos(a),CY+(R_OUT+2)*Math.sin(a)); DCX.lineTo(CX+(R_OUT+9)*Math.cos(a),CY+(R_OUT+9)*Math.sin(a));
+    DCX.strokeStyle="rgba(255,255,255,0.18)"; DCX.lineWidth=i%4===0?2:0.8; DCX.stroke();
+  }
+  // Zone boundary markers at PWM 80 and 150
+  [80,150].forEach(p=>{
+    const a=pwm2ang(p);
+    DCX.beginPath(); DCX.moveTo(CX+(R_OUT+2)*Math.cos(a),CY+(R_OUT+2)*Math.sin(a)); DCX.lineTo(CX+(R_OUT+10)*Math.cos(a),CY+(R_OUT+10)*Math.sin(a));
+    DCX.strokeStyle="rgba(255,255,255,0.45)"; DCX.lineWidth=1.5; DCX.stroke();
+  });
+
+  const px=CX+(R_IN-6)*Math.cos(ca), py=CY+(R_IN-6)*Math.sin(ca);
+  const ox=CX+7*Math.cos(ca), oy=CY+7*Math.sin(ca);
+  DCX.beginPath(); DCX.moveTo(ox,oy); DCX.lineTo(px,py); DCX.strokeStyle="rgba(255,255,255,0.75)"; DCX.lineWidth=2.5; DCX.lineCap="round"; DCX.stroke();
+  DCX.beginPath(); DCX.arc(CX,CY,4.5,0,2*Math.PI); DCX.fillStyle="rgba(255,255,255,0.4)"; DCX.fill();
+}
+
+function setDialPwm(pwm){
+  dialPwm=Math.max(0,Math.min(255,pwm));
+  setText("dialVal",dialPwm); setText("dialPct",Math.round((dialPwm/255)*100));
+  const b=document.getElementById("dialBadge");
+  if(dialPwm===0)          {b.textContent="● STOPPED"; b.style.cssText="background:rgba(255,255,255,.05);color:var(--text-muted);border:1px solid var(--border)";}
+  else if(dialPwm<=80)     {b.textContent="▶ LOW  (<20°C)";  b.style.cssText="background:rgba(56,189,248,.1);color:var(--accent);border:1px solid rgba(56,189,248,.25)";}
+  else if(dialPwm<150)     {b.textContent="▶ LOW–MED";       b.style.cssText="background:rgba(56,189,248,.1);color:var(--accent);border:1px solid rgba(56,189,248,.25)";}
+  else if(dialPwm===150)   {b.textContent="▶▶ MED  (20-40°C)"; b.style.cssText="background:rgba(251,191,36,.1);color:var(--yellow);border:1px solid rgba(251,191,36,.25)";}
+  else if(dialPwm<255)     {b.textContent="▶▶ MED–HIGH";     b.style.cssText="background:rgba(251,146,60,.1);color:var(--orange);border:1px solid rgba(251,146,60,.25)";}
+  else                     {b.textContent="▶▶▶ HIGH  (≥40°C)"; b.style.cssText="background:rgba(248,113,113,.12);color:var(--red);border:1px solid rgba(248,113,113,.3)";}
+  drawDial();
+}
+
+function evtAngle(e){
+  const r=DC.getBoundingClientRect(), sx=DW/r.width, sy=DW/r.height;
+  const cx=e.touches?e.touches[0].clientX:e.clientX;
+  const cy=e.touches?e.touches[0].clientY:e.clientY;
+  return Math.atan2((cy-r.top)*sy-CY,(cx-r.left)*sx-CX);
+}
+
+DC.addEventListener("mousedown",  e=>{isDragging=true; setDialPwm(ang2pwm(evtAngle(e)));});
+DC.addEventListener("touchstart", e=>{isDragging=true; e.preventDefault(); setDialPwm(ang2pwm(evtAngle(e)));},{passive:false});
+document.addEventListener("mousemove",  e=>{if(isDragging)setDialPwm(ang2pwm(evtAngle(e)));});
+document.addEventListener("touchmove",  e=>{if(isDragging){e.preventDefault();setDialPwm(ang2pwm(evtAngle(e)));}},{passive:false});
+document.addEventListener("mouseup",    ()=>isDragging=false);
+document.addEventListener("touchend",   ()=>isDragging=false);
+DC.addEventListener("wheel",e=>{e.preventDefault();setDialPwm(dialPwm+(e.deltaY<0?5:-5));},{passive:false});
+
+setDialPwm(80);
+
+/* ── helpers ── */
+function setText(id,val){const el=document.getElementById(id);if(el)el.textContent=(val!=null)?val:"--";}
+function setFlame(id,isFire){const el=document.getElementById(id);if(!el)return;if(isFire){el.textContent="⚠  FIRE DETECTED";el.className="flame-box flame-danger";}else{el.textContent="✓  SAFE — NO FIRE";el.className="flame-box flame-safe";}}
+
+function updateLatency(rtt){
+  latBuf.push(rtt); if(latBuf.length>60)latBuf.shift();
+  if(rtt<latMin)latMin=rtt; if(rtt>latMax)latMax=rtt;
+  const avg=Math.round(latBuf.reduce((a,b)=>a+b,0)/latBuf.length);
+  const col=rtt<80?"#34d399":rtt<300?"#fb923c":"#f87171", pct=Math.min(100,(rtt/500)*100);
+  const lv=document.getElementById("latVal"); if(lv){lv.textContent=rtt;lv.style.color=col;}
+  setText("latAvg",avg+" ms"); setText("latMin",latMin+" ms"); setText("latMax",latMax+" ms");
+  const bar=document.getElementById("latBar"); if(bar){bar.style.width=pct+"%";bar.style.background=col;}
+  const cl=document.getElementById("ctrl-lat"); if(cl){cl.textContent=rtt;cl.style.color=col;}
+  setText("ctrl-latAvg",avg+" ms"); setText("ctrl-latMin",latMin+" ms"); setText("ctrl-latMax",latMax+" ms");
+  const cb=document.getElementById("ctrl-latBar"); if(cb){cb.style.width=pct+"%";cb.style.background=col;}
+}
+
+function drawGraph(id,data,c1,c2){
+  const canvas=document.getElementById(id); if(!canvas||data.length<2)return;
+  const ctx=canvas.getContext("2d"), W=canvas.width, H=canvas.height;
+  ctx.clearRect(0,0,W,H);
+  const mn=Math.min(...data)*.93, mx=Math.max(...data)*1.07||1, rng=mx-mn||1;
+  const pts=data.map((v,i)=>({x:(i/(MAX_PTS-1))*W, y:H-((v-mn)/rng)*(H-8)-2}));
+  const g=ctx.createLinearGradient(0,0,0,H); g.addColorStop(0,c2+"38"); g.addColorStop(1,c1+"00");
+  ctx.beginPath(); ctx.moveTo(pts[0].x,pts[0].y);
+  for(let i=1;i<pts.length;i++){const mx2=(pts[i-1].x+pts[i].x)/2;ctx.bezierCurveTo(mx2,pts[i-1].y,mx2,pts[i].y,pts[i].x,pts[i].y);}
+  ctx.lineTo(pts[pts.length-1].x,H);ctx.lineTo(pts[0].x,H);ctx.closePath();ctx.fillStyle=g;ctx.fill();
+  ctx.beginPath();ctx.moveTo(pts[0].x,pts[0].y);
+  for(let i=1;i<pts.length;i++){const mx2=(pts[i-1].x+pts[i].x)/2;ctx.bezierCurveTo(mx2,pts[i-1].y,mx2,pts[i].y,pts[i].x,pts[i].y);}
+  ctx.strokeStyle=c2;ctx.lineWidth=1.8;ctx.stroke();
+  const last=pts[pts.length-1];ctx.beginPath();ctx.arc(last.x,last.y,3.2,0,Math.PI*2);ctx.fillStyle=c2;ctx.fill();
+}
+</script>
+</body>
+</html>
